@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pyenv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local data that can be regenerated
+# (leave the small reference CSVs tracked; ignore any larger or temporary dumps)
+*.tmp
+*.bak
