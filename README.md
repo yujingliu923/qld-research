@@ -10,6 +10,7 @@ Replication, comparative analysis, and long-hold strategy backtests for **QLD (P
 | [`docs/QLD_CALIBRATION.md`](docs/QLD_CALIBRATION.md) | Fee calibration methodology + tracking-error report; shows how QLD is simulated back to 1999 |
 | [`docs/QLD_RETURNS_COMPARISON.md`](docs/QLD_RETURNS_COMPARISON.md) | Yearly bars + monthly best-performer heatmap; QQQ vs QLD vs TQQQ |
 | [`docs/QLD_STRATEGY_REPORT.md`](docs/QLD_STRATEGY_REPORT.md) | Buy & Hold and Monthly DCA backtests across two evaluation windows |
+| [`docs/QQQ_SWING_STRATEGY_REPORT.md`](docs/QQQ_SWING_STRATEGY_REPORT.md) | Reddit "buy after −2%, sell after +3%" QQQ swing strategy backtest + live-state check |
 | [`scripts/`](scripts/) | The 4 reproducible Python scripts |
 | [`data/`](data/) | Cached price series + strategy metrics (CSV) |
 | [`figures/`](figures/) | All generated plots (PNG) |
@@ -31,6 +32,7 @@ python scripts/qld_replication.py          # → data/qld_simulated.csv + figure
 python scripts/qld_returns_comparison.py   # → figures/yearly_returns_bar.png + monthly_best_heatmap.png
 python scripts/qld_strategies.py           # → 8 strategy plots + data/strategy_metrics.csv
 python scripts/heatmap_breakdown.py        # prints monthly-winner counts (cited in QLD_STRATEGY_REPORT §7.A)
+python scripts/qqq_swing_strategy.py       # → 4 swing plots + data/qqq_swing_metrics.csv + live-state check
 ```
 
 All scripts use absolute paths derived from `Path(__file__)`, so they can be run from any cwd.
