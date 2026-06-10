@@ -36,8 +36,17 @@ import pandas as pd
 
 import detect
 from analysis import OUT
-from data import load_all
+from data import CACHE_DIR, _get, _parse_two_col, load_all, MIRRORS
 from regime import load_extended
+
+ASSET_MIRRORS = {
+    # London fixing, monthly, 1833 .. 2026-05
+    "GOLD": "https://raw.githubusercontent.com/datasets/gold-prices/main/data/monthly.csv",
+    # WTI spot, daily (EIA), 1986 .. 2026-06
+    "WTI": "https://raw.githubusercontent.com/datasets/oil-prices/main/data/wti-daily.csv",
+    # FRED DGS10 daily, 1962 .. 2026-03
+    "DGS10": "https://raw.githubusercontent.com/FeanorKingofNoldor/prometheus/04e6a017529e506b21bbd2d3eaefdef3541bc7e8/data/fred/dgs10.csv",
+}
 
 MAX_FFILL = 6          # months a macro series may be carried forward
 MIN_FEATURES = 7       # windows with fewer available features are dropped
@@ -98,6 +107,129 @@ def build_features(series, ext) -> tuple[pd.DataFrame, dict]:
     fwd["fwd_6m_%"] = (spx_me.shift(-6) / spx_me - 1) * 100
     fwd["fwd_12m_%"] = (spx_me.shift(-12) / spx_me - 1) * 100
     return df.join(fwd), stale
+
+
+def load_assets() -> dict:
+    """Gold, WTI, 10y yield and the dollar index, parquet-cached."""
+    import io
+
+    out = {}
+
+    def cached(name, fetch):
+        path = CACHE_DIR / f"{name}.parquet"
+        if path.exists():
+            out[name] = pd.read_parquet(path)[name]
+            return
+        s = fetch()
+        s.name = name
+        s.to_frame().to_parquet(path)
+        print(f"[windows] {name}: {s.index.min().date()} .. {s.index.max().date()}")
+        out[name] = s
+
+    def gold():
+        df = pd.read_csv(io.StringIO(_get(ASSET_MIRRORS["GOLD"])))
+        idx = pd.to_datetime(df["Date"]) + pd.offsets.MonthEnd(0)
+        return pd.to_numeric(df.set_axis(idx)["Price"], errors="coerce").dropna()
+
+    cached("GOLD", gold)
+    cached("WTI", lambda: _parse_two_col(_get(ASSET_MIRRORS["WTI"]), "WTI"))
+    cached("DGS10", lambda: _parse_two_col(_get(ASSET_MIRRORS["DGS10"]), "DGS10"))
+
+    def dxy():
+        df = pd.read_csv(io.StringIO(_get(MIRRORS["US70_DAILY"])))
+        df.columns = [c.strip("﻿") for c in df.columns]
+        df["DATE"] = pd.to_datetime(df["DATE"])
+        s = pd.to_numeric(df.set_index("DATE")["US_Dollar_Index"], errors="coerce")
+        return s.sort_index().dropna()
+
+    cached("DXY", dxy)
+    return out
+
+
+def _me(t: pd.Timestamp, months: int) -> pd.Timestamp:
+    """t shifted by `months` and rolled to that month's end (avoids
+    asof() slipping to the prior month when e.g. Nov-30 + 1m = Dec-30)."""
+    return (t + pd.DateOffset(months=months)) + pd.offsets.MonthEnd(0)
+
+
+def _fwd_ret(s: pd.Series, t: pd.Timestamp, months: int):
+    t2 = _me(t, months)
+    if t2 > s.index.max() or t < s.index.min():
+        return np.nan
+    return float(s.asof(t2) / s.asof(t) - 1) * 100
+
+
+def asset_table(analogs: pd.DataFrame, ext, assets) -> pd.DataFrame:
+    """Cross-asset performance in the 12 months after each analog window."""
+    rows = []
+    for t in analogs.index:
+        d10_0, d10_1 = assets["DGS10"].asof(t), np.nan
+        t2 = _me(t, 12)
+        if t2 <= assets["DGS10"].index.max():
+            d10_1 = assets["DGS10"].asof(t2)
+        # approximate 10y Treasury 12m total return: carry - duration x dY
+        if not np.isnan(d10_1):
+            y0, y1 = d10_0 / 100, d10_1 / 100
+            dur = (1 - (1 + y1) ** -10) / y1
+            tr10 = round(100 * (y0 - dur * (y1 - y0)), 1)
+        else:
+            tr10 = np.nan
+        d2 = ext["DGS2"]
+        rows.append({
+            "window_end": f"{t:%Y-%m}",
+            "SPX_%": round(_fwd_ret(ext["SPX"], t, 12), 1),
+            "IXIC_%": round(_fwd_ret(ext["IXIC"], t, 12), 1),
+            "Gold_%": round(_fwd_ret(assets["GOLD"], t, 12), 1),
+            "WTI_%": round(_fwd_ret(assets["WTI"], t, 12), 1),
+            "DXY_%": round(_fwd_ret(assets["DXY"], t, 12), 1),
+            "d2y_bp": round(100 * (d2.asof(_me(t, 12)) - d2.asof(t)))
+            if _me(t, 12) <= d2.index.max() else np.nan,
+            "d10y_bp": round(100 * (d10_1 - d10_0)) if not np.isnan(d10_1) else np.nan,
+            "UST10y_TR_approx_%": tr10,
+        })
+    df = pd.DataFrame(rows)
+    med = df.drop(columns="window_end").median(numeric_only=True).round(1)
+    df.loc[len(df)] = ["median"] + [med.get(c, np.nan) for c in df.columns[1:]]
+    return df
+
+
+def monthly_grid(close: pd.Series, analogs: pd.DataFrame) -> pd.DataFrame:
+    """Month-by-month % returns for the 12 months after each analog."""
+    me = close.resample("ME").last()
+    rows = {}
+    for t in analogs.index:
+        rets = []
+        for m in range(1, 13):
+            a = _me(t, m - 1)
+            b = _me(t, m)
+            rets.append(round(100 * (me.asof(b) / me.asof(a) - 1), 1)
+                        if b <= me.index.max() and a >= me.index.min() else np.nan)
+        rows[f"{t:%Y-%m}"] = rets + [round(_fwd_ret(close, t, 12), 1)]
+    grid = pd.DataFrame(rows, index=[f"M+{m}" for m in range(1, 13)] + ["cum_12m"]).T
+    grid.loc["median"] = grid.median()
+    return grid.reset_index().rename(columns={"index": "window_end"})
+
+
+def monthly_heatmap(grids: dict, fname: str):
+    fig, axes = plt.subplots(len(grids), 1, figsize=(11, 4.2 * len(grids)))
+    for ax, (label, grid) in zip(np.atleast_1d(axes), grids.items()):
+        g = grid.set_index("window_end")[[f"M+{m}" for m in range(1, 13)]]
+        data = g.values.astype(float)
+        lim = np.nanmax(np.abs(data))
+        im = ax.imshow(data, cmap="RdYlGn", vmin=-lim, vmax=lim, aspect="auto")
+        ax.set_xticks(range(12), g.columns, fontsize=8)
+        ax.set_yticks(range(len(g)), g.index, fontsize=8)
+        for i in range(data.shape[0]):
+            for j in range(12):
+                if not np.isnan(data[i, j]):
+                    ax.annotate(f"{data[i, j]:.1f}", (j, i), ha="center",
+                                va="center", fontsize=7)
+        ax.set_title(f"{label}: monthly % returns in the 12 months after "
+                     "each analog window", fontsize=10)
+        fig.colorbar(im, ax=ax, shrink=0.8)
+    fig.tight_layout()
+    fig.savefig(OUT / fname, dpi=130)
+    plt.close(fig)
 
 
 def pattern_code(row) -> str:
@@ -196,7 +328,8 @@ def make_figures(df, analogs, spx_d, now):
     plt.close(fig)
 
 
-def write_report(df, analogs, stale, now, last_close):
+def write_report(df, analogs, stale, now, last_close,
+                 assets_df=None, grids=None, assets=None):
     cur = df.loc[now]
     same = df[df["pattern"] == cur["pattern"]]
     same_hist = same[abs((same.index - now).days) > EXCLUDE_MONTHS * 30.4]
@@ -228,10 +361,22 @@ def write_report(df, analogs, stale, now, last_close):
     cols = ["window_end", "distance", "pattern", "eq_ret_3m", "ff_chg_3m",
             "cpi_yoy", "y2_minus_ff", "fwd_6m_%", "fwd_12m_%"]
     w(view[cols].round(2).to_markdown(index=False))
-    w(f"\nForward S&P 500 returns after these analogs: median "
-      f"{analogs['fwd_12m_%'].median():+.1f}% over 12 months "
-      f"(range {analogs['fwd_12m_%'].min():+.1f}% to "
-      f"{analogs['fwd_12m_%'].max():+.1f}%).\n")
+
+    if assets_df is not None:
+        w("\n\n## Cross-asset performance in the 12 months after each analog\n")
+        w("Yield moves in bp; `UST10y_TR_approx` is carry minus duration x "
+          "yield change (approximation, not an index). n/a = the series "
+          "ends before the 12-month mark"
+          + (f" (DXY mirror ends {assets['DXY'].index.max():%Y-%m})."
+             if assets is not None else "."))
+        w("")
+        w(assets_df.fillna("n/a").to_markdown(index=False))
+
+    if grids is not None:
+        for label, grid in grids.items():
+            w(f"\n\n## Monthly {label} returns after each analog (%)\n")
+            w(grid.fillna("n/a").to_markdown(index=False))
+        w("\nSame data as a heatmap: `window_analog_monthly.png`.\n")
 
     w("\n## Pattern-code view\n")
     w(f"The current pattern `{cur['pattern']}` occurred in "
@@ -272,8 +417,18 @@ def main():
     now = df.index[-1]
     analogs = pick_episodes(df, now)
     make_figures(df, analogs, ext["SPX"], now)
-    write_report(df, analogs, stale, now, ext["SPX"].index.max())
+    assets = load_assets()
+    assets_df = asset_table(analogs, ext, assets)
+    grids = {"S&P 500": monthly_grid(ext["SPX"], analogs),
+             "Nasdaq": monthly_grid(ext["IXIC"], analogs)}
+    monthly_heatmap(grids, "window_analog_monthly.png")
+    write_report(df, analogs, stale, now, ext["SPX"].index.max(),
+                 assets_df, grids, assets)
     df.round(3).to_csv(OUT / "window_signals.csv")
+    assets_df.to_csv(OUT / "window_analog_assets.csv", index=False)
+    for label, grid in grids.items():
+        grid.to_csv(OUT / f"window_analog_monthly_{label.replace('&', '').replace(' ', '').lower()}.csv",
+                    index=False)
     print(f"[windows] {len(df)} windows {df.index.min():%Y-%m}..{now:%Y-%m}; "
           f"current pattern: {df.loc[now, 'pattern']}")
     print("[windows] top analogs:",
