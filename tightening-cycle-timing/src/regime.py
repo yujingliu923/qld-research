@@ -340,6 +340,81 @@ def make_full_cycle_figure(ext, series, cyc):
     plt.close(fig)
 
 
+def make_combined_figure(ext, series, cyc):
+    """Single-panel version: stock prices (left axis, log) and the fed
+    funds target with hikes / terminal rate / every cut (right axis)
+    in the same plot, milestones included."""
+    import detect
+    from analysis import MILESTONE_STYLE
+
+    c = CYCLES[-1]
+    cpi_troughs = detect.find_inflation_troughs(series["CPIAUCSL"])
+    m1 = detect.assign_m1(cpi_troughs, c.m4)
+    start = m1 - pd.DateOffset(months=3)
+    end = max(ext["SPX"].index.max(), ext["IXIC"].index.max())
+
+    fig, ax = plt.subplots(figsize=(13, 6.5))
+    for name, color in [("SPX", "black"), ("IXIC", "dimgray")]:
+        s = ext[name]
+        seg = s[(s.index >= start) & (s.index <= end)]
+        ax.plot(seg.index, 100 * seg / s.asof(m1), color=color, lw=1.0,
+                alpha=0.9 if name == "SPX" else 0.55, label=name)
+    ax.set_yscale("log")
+
+    for nm, d in ([("M1", m1)] + [("M3", d) for d, _ in c.m3_candidates]
+                  + [("M4", c.m4), ("QT", c.qt_start)]):
+        col, _ = MILESTONE_STYLE[nm]
+        ax.axvline(d, color=col, lw=1.3, alpha=0.6)
+        ax.annotate(nm, (d, 0.985), xycoords=("data", "axes fraction"),
+                    color=col, fontsize=9, ha="center", va="top",
+                    fontweight="bold")
+    for name, mcol in [("SPX", "crimson"), ("IXIC", "darkorange")]:
+        peaks = detect.find_qualifying_peaks(ext[name], 0.15)
+        row, _ = detect.assign_peak(peaks, m1, c.m4)
+        if row is not None:
+            ax.plot([row["date"]], [100 * row["close"] / ext[name].asof(m1)],
+                    marker="v", ms=9, color=mcol, ls="none",
+                    label=f"P {name} {row['date'].date()}")
+    ax.set_ylabel(f"price (100 = M1 {m1.date()}, log scale)")
+    ax.grid(alpha=0.25)
+
+    # right axis: policy rate with hikes, terminal rate and cuts
+    ax2 = ax.twinx()
+    target = series["FFTARGET"]
+    tseg = target[(target.index >= start) & (target.index <= end)]
+    ax2.plot(tseg.index, tseg.values, color="steelblue", lw=1.6, alpha=0.85,
+             label=f"fed funds target (to {target.index.max().date()})")
+    ch = target.diff()
+    hikes = ch[(ch > 0) & (ch.index >= c.m4 - pd.Timedelta(days=7))
+               & (ch.index <= cyc["peak_date"])]
+    ax2.plot(hikes.index, target.loc[hikes.index], ls="none", marker="^",
+             ms=6, color="firebrick", label=f"hikes (n={len(hikes)})")
+    pk = cyc["peak_date"]
+    ax2.plot([pk], [target.loc[pk]], ls="none", marker="*", ms=15,
+             color="gold", markeredgecolor="black", mew=0.5,
+             label=f"rate peak {pk.date()} ({cyc['peak_rate']:.2f}%)")
+    cut_dates = pd.to_datetime(cyc["cuts"]["effective"])
+    ax2.plot(cut_dates, target.asof(cut_dates), ls="none", marker="v",
+             ms=8, color="teal",
+             label=f"rate cuts (n={len(cut_dates)}, first {cyc['first_cut'].date()})")
+    for d in cut_dates:
+        ax2.axvline(d, color="teal", lw=0.9, alpha=0.35)
+    ax2.set_ylabel("fed funds target (%)", color="steelblue")
+    ax2.tick_params(axis="y", colors="steelblue")
+    ax2.set_ylim(0, target.loc[pk] * 1.5)
+
+    ax.set_xlim(start, end)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=8, loc="lower right", framealpha=0.9)
+    ax.set_title("Stock prices and the policy rate in one plot: 2021-22 "
+                 "tightening and the easing cycle since the first cut")
+    fig.tight_layout()
+    fig.savefig(OUT / "regime_combined.png", dpi=130)
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
@@ -443,6 +518,7 @@ def main():
     analogs = first_cut_analogs(ext["SPX"], series)
     make_figure(ext, series, cyc, met)
     make_full_cycle_figure(ext, series, cyc)
+    make_combined_figure(ext, series, cyc)
     write_report(ext, series, cyc, met, analogs)
     pd.DataFrame(met).T.to_csv(OUT / "regime_metrics.csv")
     analogs.to_csv(OUT / "first_cut_analogs.csv", index=False)
