@@ -1,0 +1,15 @@
+interval,n,mean_m,median_m,min_m,max_m,peak_before,peak_after,sign_test_p,note
+P-M1 (SPX),5,37.7,44.2,5.4,70.8,0,5,0.062,
+P-M2 (SPX),5,33.4,42.5,11.9,51.9,0,5,0.062,
+P-M4 (SPX),5,17.2,8.8,-2.4,39.9,1,4,0.375,
+P-QT (SPX),1,-4.9,-4.9,-4.9,-4.9,1,0,1.0,
+"P-M2 (SPX, excl. degenerate M2)",4,28.8,29.8,11.9,43.5,0,4,0.125,drops cycles where M2 trough is >36m before M4
+"P-M3 (SPX, variant a)",4,17.6,12.0,2.0,44.4,0,4,0.125,single-candidate cycles included in both variants
+"P-M3 (SPX, variant b)",4,17.4,12.0,1.1,44.4,0,4,0.125,single-candidate cycles included in both variants
+P-M1 (IXIC),6,33.3,31.8,5.4,70.3,0,6,0.031,
+P-M2 (IXIC),6,41.8,46.4,11.9,79.1,0,6,0.031,
+P-M4 (IXIC),6,14.3,4.3,-4.9,45.9,2,4,0.688,
+P-QT (IXIC),2,-16.4,-16.4,-26.4,-6.4,2,0,0.5,
+"P-M2 (IXIC, excl. degenerate M2)",4,30.4,30.0,11.9,49.5,0,4,0.125,drops cycles where M2 trough is >36m before M4
+"P-M3 (IXIC, variant a)",5,20.2,19.7,0.5,45.1,0,5,0.062,single-candidate cycles included in both variants
+"P-M3 (IXIC, variant b)",5,18.6,19.0,-0.4,45.1,1,4,0.375,single-candidate cycles included in both variants

@@ -1,0 +1,19 @@
+cycle,index,m3_variant,sequence,front_run,P_after_QT
+1972-74,SPX,,M2<M1<M4<P,False,False
+1972-74,IXIC,,M2<M1<M4<P,False,False
+1977-80,SPX,,M1<M2<M4<M3<P,False,False
+1977-80,IXIC,,M1<M2<M4<M3<P,False,False
+1994,SPX,,M1<M2<M3=M4 (P=no burst),False,False
+1994,IXIC,,M1<M2<M3=M4 (P=no burst),False,False
+1999,SPX,,M1<M2<M3<M4<P,False,False
+1999,IXIC,,M1<M2<M3<M4<P,False,False
+2004,SPX,,M3<M1<M2<M4<P,False,False
+2004,IXIC,,M3<M1<M2<M4<P,False,False
+2015-18,SPX,a,M2<M3<M1<M4 (P=no burst),False,False
+2015-18,SPX,b,M2<M3<M1<M4 (P=no burst),False,False
+2015-18,IXIC,a,M2<M3<M1<P<M4,True,False
+2015-18,IXIC,b,M2<M3<M1<P<M4,True,False
+2021-22,SPX,a,M2<M1<M3<P<M4,True,False
+2021-22,SPX,b,M2<M1<M3<P<M4,True,False
+2021-22,IXIC,a,M2<M1<M3<P<M4,True,False
+2021-22,IXIC,b,M2<M1<P<M3<M4,False,False
