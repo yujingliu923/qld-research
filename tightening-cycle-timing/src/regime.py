@@ -230,6 +230,116 @@ def make_figure(ext, series, cyc, metrics):
     plt.close(fig)
 
 
+def make_full_cycle_figure(ext, series, cyc):
+    """One chart from the 2021-22 cycle's M1 through today: prices with
+    M1/M2/M3/M4/QT/P milestone marks on top, policy rate with every
+    hike, the terminal rate and every cut below.  Newly detected
+    inflation / 2y-yield troughs (candidate M1/M2 of a *next* cycle)
+    are shown as dashed lines."""
+    import detect
+    from analysis import MILESTONE_STYLE
+
+    c = CYCLES[-1]
+    cpi_troughs = detect.find_inflation_troughs(series["CPIAUCSL"])
+    m1 = detect.assign_m1(cpi_troughs, c.m4)
+    rate2y = detect.splice_short_rate(ext["DGS2"], series["DGS1"])
+    rate_troughs = detect.find_rate_troughs(rate2y)
+    m2 = detect.assign_m2(rate_troughs, c.m4)
+
+    start = m1 - pd.DateOffset(months=3)
+    end = max(ext["SPX"].index.max(), ext["IXIC"].index.max())
+
+    fig, (ax, axr) = plt.subplots(
+        2, 1, figsize=(13, 8), sharex=True,
+        gridspec_kw={"height_ratios": [2.2, 1]})
+
+    # --- top: prices indexed to 100 at M1, milestone marks, peaks -----
+    for name, color in [("SPX", "black"), ("IXIC", "dimgray")]:
+        s = ext[name]
+        seg = s[(s.index >= start) & (s.index <= end)]
+        ax.plot(seg.index, 100 * seg / s.asof(m1), color=color, lw=1.0,
+                alpha=0.9 if name == "SPX" else 0.55, label=name)
+    ax.set_yscale("log")
+
+    marks = ([("M1", m1)] + [("M3", d) for d, _ in c.m3_candidates]
+             + [("M4", c.m4), ("QT", c.qt_start)])
+    for nm, d in marks:
+        col, _ = MILESTONE_STYLE[nm]
+        ax.axvline(d, color=col, lw=1.5, alpha=0.85)
+        ax.annotate(nm, (d, 0.985), xycoords=("data", "axes fraction"),
+                    color=col, fontsize=9, ha="center", va="top",
+                    fontweight="bold")
+    ax.annotate(f"M2 {m2.date()} (off-scale; ZIRP-degenerate rule)",
+                (0.01, 0.02), xycoords="axes fraction", fontsize=7,
+                color="gray")
+
+    for name, mcol in [("SPX", "crimson"), ("IXIC", "darkorange")]:
+        peaks = detect.find_qualifying_peaks(ext[name], 0.15)
+        row, status = detect.assign_peak(peaks, m1, c.m4)
+        if row is not None:
+            ax.plot([row["date"]],
+                    [100 * row["close"] / ext[name].asof(m1)],
+                    marker="v", ms=9, color=mcol, ls="none",
+                    label=f"P {name} {row['date'].date()}")
+
+    # candidate milestones of a *next* cycle, detected since the cuts began
+    nxt_m1 = cpi_troughs[cpi_troughs["date"] > c.m4 + pd.DateOffset(months=12)]
+    if len(nxt_m1):
+        d = nxt_m1["date"].iloc[-1]
+        ax.axvline(d, color="tab:green", lw=1.4, ls="--", alpha=0.9)
+        ax.annotate(f"new CPI trough {d:%Y-%m}\n(next-cycle M1?)",
+                    (d, 0.30), xycoords=("data", "axes fraction"),
+                    color="tab:green", fontsize=8, ha="center")
+    nxt_m2 = rate_troughs[rate_troughs["date"] > cyc["peak_date"]]
+    if len(nxt_m2):
+        d = nxt_m2["date"].iloc[-1]
+        ax.axvline(d, color="tab:blue", lw=1.4, ls="--", alpha=0.9)
+        ax.annotate(f"new 2y trough {d.date()}\n(next-cycle M2?)",
+                    (d, 0.12), xycoords=("data", "axes fraction"),
+                    color="tab:blue", fontsize=8, ha="center")
+
+    ax.set_ylabel(f"price (100 = M1 {m1.date()}, log)")
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8, loc="upper left")
+    ax.set_title("2021-22 tightening cycle and the current easing cycle: "
+                 "M1/M2/M3/M4/QT/P milestones, hikes, terminal rate and cuts")
+
+    # --- bottom: policy rate with hikes / peak / cuts, 2y, CPI YoY ----
+    target = series["FFTARGET"]
+    tseg = target[(target.index >= start) & (target.index <= end)]
+    axr.plot(tseg.index, tseg.values, color="steelblue", lw=1.4,
+             label=f"fed funds target (to {target.index.max().date()})")
+    ch = target.diff()
+    hikes = ch[(ch > 0) & (ch.index >= c.m4 - pd.Timedelta(days=7))
+               & (ch.index <= cyc["peak_date"])]
+    axr.plot(hikes.index, target.loc[hikes.index], ls="none", marker="^",
+             ms=6, color="firebrick", label=f"hikes (n={len(hikes)})")
+    pk = cyc["peak_date"]
+    axr.plot([pk], [target.loc[pk]], ls="none", marker="*", ms=14,
+             color="gold", markeredgecolor="black", mew=0.5,
+             label=f"rate peak {pk.date()} ({cyc['peak_rate']:.2f}%)")
+    cut_dates = pd.to_datetime(cyc["cuts"]["effective"])
+    axr.plot(cut_dates, target.asof(cut_dates), ls="none", marker="v",
+             ms=7, color="teal", label=f"cuts (n={len(cut_dates)}, "
+             f"first {cyc['first_cut'].date()})")
+
+    dseg = ext["DGS2"][(ext["DGS2"].index >= start) & (ext["DGS2"].index <= end)]
+    axr.plot(dseg.index, dseg.values, color="darkorange", lw=0.9, alpha=0.8,
+             label=f"2y Treasury (to {ext['DGS2'].index.max().date()})")
+    cpi = series["CPIAUCSL"]
+    yoy = (cpi / cpi.shift(12) - 1) * 100
+    cseg = yoy[(yoy.index >= start) & (yoy.index <= end)]
+    axr.plot(cseg.index, cseg.values, color="seagreen", lw=1.2, marker=".",
+             ms=3, label=f"CPI YoY (to {yoy.dropna().index.max():%Y-%m})")
+    axr.set_ylabel("%")
+    axr.grid(alpha=0.25)
+    axr.legend(fontsize=7, loc="upper right", ncol=2)
+    axr.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+    fig.tight_layout()
+    fig.savefig(OUT / "regime_full_cycle.png", dpi=130)
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
@@ -332,6 +442,7 @@ def main():
            for name in ["SPX", "IXIC"]}
     analogs = first_cut_analogs(ext["SPX"], series)
     make_figure(ext, series, cyc, met)
+    make_full_cycle_figure(ext, series, cyc)
     write_report(ext, series, cyc, met, analogs)
     pd.DataFrame(met).T.to_csv(OUT / "regime_metrics.csv")
     analogs.to_csv(OUT / "first_cut_analogs.csv", index=False)
