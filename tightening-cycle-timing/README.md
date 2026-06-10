@@ -27,7 +27,8 @@ python run_all.py            # FORCE_REFRESH=1 to bypass the parquet cache
 | `src/detect.py` | M1/M2/P detection rules |
 | `src/analysis.py` | Master timeline, interval stats (sign tests), orderings, conditional drawdowns, robustness, figures, SUMMARY.md |
 | `src/regime.py` | Current-regime snapshot for the easing cycle that began with the 2024-09 first cut (extends prices/yields with overlap-checked recent mirrors); writes `output/REGIME.md` + `regime_current.png` |
-| `run_all.py` | End-to-end driver (regime snapshot runs separately: `python src/regime.py`) |
+| `src/windows.py` | Rolling 3-month signal windows (1954→now): pattern codes, nearest-neighbor similarity to the current window, analog forward paths; writes `output/WINDOWS.md` + figures |
+| `run_all.py` | End-to-end driver (regime/window snapshots run separately: `python src/regime.py`, `python src/windows.py`) |
 | `output/` | `SUMMARY.md` (read this), CSV tables, timeline PNGs |
 
 Each timeline figure also shows the fed funds path on the right axis
