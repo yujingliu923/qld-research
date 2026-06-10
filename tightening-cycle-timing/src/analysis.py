@@ -230,6 +230,41 @@ def robustness(series, det15) -> pd.DataFrame:
 # Timeline figures
 # ---------------------------------------------------------------------------
 
+def fed_rate_events(series, m4: pd.Timestamp, window_end: pd.Timestamp):
+    """Hike announcements, terminal-rate date and first subsequent cut.
+
+    From 1982-09-27 the daily fed funds target (DFEDTAR/DFEDTARU) dates
+    every FOMC move exactly; before that there was no announced target,
+    so hikes are not marked and the peak/first-cut are read from the
+    monthly average funds rate (FEDFUNDS).
+    """
+    target = series["FFTARGET"]
+    if m4 >= target.index.min():
+        seg = target[(target.index >= m4 - pd.Timedelta(days=7))
+                     & (target.index <= window_end)]
+        ch = seg.diff()
+        hikes = list(ch[ch > 0].index)
+        peak_date = seg.idxmax()
+        full_ch = target.diff()
+        cuts = full_ch[(full_ch < 0) & (full_ch.index > peak_date)]
+        first_cut = cuts.index[0] if len(cuts) else None
+        rate_line = target
+        mode = "target"
+    else:
+        ff = series["FEDFUNDS"]
+        seg = ff[(ff.index >= m4) & (ff.index <= window_end)]
+        hikes = []
+        peak_date = seg.idxmax()
+        peak_val = seg.max()
+        after = ff[ff.index > peak_date]
+        below = after[after < peak_val - 0.25]
+        first_cut = below.index[0] if len(below) else None
+        rate_line = ff
+        mode = "monthly avg (no announced target pre-1982)"
+    return {"hikes": hikes, "peak_date": peak_date, "first_cut": first_cut,
+            "rate_line": rate_line, "mode": mode}
+
+
 MILESTONE_STYLE = {
     "M1": ("tab:green", "M1 inflation inflection"),
     "M2": ("tab:blue", "M2 rate-expectation trough"),
@@ -239,7 +274,8 @@ MILESTONE_STYLE = {
 }
 
 
-def _plot_cycle(ax, series, master, cycle_key, annotate=True):
+def _plot_cycle(ax, series, master, cycle_key, annotate=True,
+                legend_fontsize=8):
     rows = master[(master["cycle"] == cycle_key)
                   & (master["m3_variant"].isin(["", "a"]))]
     r0 = rows.iloc[0]
@@ -248,6 +284,11 @@ def _plot_cycle(ax, series, master, cycle_key, annotate=True):
     start = anchor - pd.DateOffset(months=6)
     p_dates = [d for d in rows["P"] if not pd.isna(d)]
     end = max([c.m4 + pd.DateOffset(months=30)] + [d + pd.DateOffset(months=18) for d in p_dates])
+    rate_ev = fed_rate_events(series, c.m4, c.m4 + pd.DateOffset(months=60))
+    if rate_ev["first_cut"] is not None:
+        end = max(end, rate_ev["first_cut"] + pd.DateOffset(months=3))
+    else:
+        end = max(end, rate_ev["peak_date"] + pd.DateOffset(months=6))
 
     for idx, color in [("SPX", "black"), ("IXIC", "dimgray")]:
         s = series[idx]
@@ -287,9 +328,40 @@ def _plot_cycle(ax, series, master, cycle_key, annotate=True):
         ax.plot([r["P"]], [100 * r["P_close"] / ref], marker="v", ms=8,
                 color="crimson" if r["index"] == "SPX" else "darkorange",
                 ls="none", label=f"P {r['index']} {r['P'].date()}")
+    # right axis: policy-rate path with hikes / terminal rate / first cut
+    ax2 = ax.twinx()
+    rl = rate_ev["rate_line"]
+    rseg = rl[(rl.index >= start) & (rl.index <= end)]
+    ax2.plot(rseg.index, rseg.values, color="steelblue", lw=1.2, alpha=0.7,
+             label=f"fed funds {'target' if rate_ev['mode'] == 'target' else 'rate'}")
+    hikes = [h for h in rate_ev["hikes"] if start <= h <= end]
+    if hikes:
+        ax2.plot(hikes, [rl.asof(h) for h in hikes], ls="none", marker="^",
+                 ms=5, color="firebrick", label=f"hike announced (n={len(hikes)})")
+    pk = rate_ev["peak_date"]
+    if start <= pk <= end:
+        ax2.plot([pk], [rl.asof(pk)], ls="none", marker="*", ms=13,
+                 color="gold", markeredgecolor="black", mew=0.5,
+                 label=f"rate peak {pk.date()}")
+    fc = rate_ev["first_cut"]
+    if fc is not None and start <= fc <= end:
+        ax2.plot([fc], [rl.asof(fc)], ls="none", marker="v", ms=8,
+                 color="teal", label=f"first cut {fc.date()}")
+    ax2.set_ylabel("fed funds (%)", fontsize=8, color="steelblue")
+    ax2.tick_params(axis="y", labelsize=7, colors="steelblue")
+    ax2.set_ylim(bottom=0)
+    if rate_ev["mode"] != "target":
+        ax2.annotate("pre-1982: monthly avg rate,\nno announced target",
+                     (0.99, 0.02), xycoords="axes fraction", fontsize=7,
+                     color="steelblue", ha="right")
+
     ax.set_xlim(start, end)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     ax.grid(alpha=0.25)
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=legend_fontsize, loc="upper left",
+              framealpha=0.85)
 
 
 def make_figures(series, master):
@@ -297,16 +369,15 @@ def make_figures(series, master):
         fig, ax = plt.subplots(figsize=(11, 5))
         _plot_cycle(ax, series, master, c.key)
         ax.set_title(f"{c.label}: milestones vs. index price (100 = M1, log scale)")
-        ax.legend(fontsize=8, loc="lower right")
         fig.tight_layout()
         fig.savefig(OUT / f"timeline_{c.key}.png", dpi=130)
         plt.close(fig)
 
     fig, axes = plt.subplots(4, 2, figsize=(14, 16))
     for ax, c in zip(axes.flat, CYCLES):
-        _plot_cycle(ax, series, master, c.key, annotate=True)
+        _plot_cycle(ax, series, master, c.key, annotate=True,
+                    legend_fontsize=6)
         ax.set_title(c.label, fontsize=10)
-        ax.legend(fontsize=6, loc="lower right")
     for ax in axes.flat[len(CYCLES):]:
         ax.axis("off")
     fig.suptitle("Tightening cycles: M1/M2/M3/M4/QT vs equity peak "

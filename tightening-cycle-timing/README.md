@@ -29,6 +29,13 @@ python run_all.py            # FORCE_REFRESH=1 to bypass the parquet cache
 | `run_all.py` | End-to-end driver |
 | `output/` | `SUMMARY.md` (read this), CSV tables, timeline PNGs |
 
+Each timeline figure also shows the fed funds path on the right axis
+(daily target DFEDTAR/DFEDTARU from 1982-09, monthly average FEDFUNDS
+before that, when no target was announced), with red triangles at each
+hike, a star at the terminal/peak rate and a teal triangle at the first
+subsequent cut. Marker dates are the *effective* dates of target
+changes, which can lag the FOMC announcement by a day.
+
 ## Headline results (details + caveats in `output/SUMMARY.md`)
 
 - Equity peaks historically came *after* the first hike — often years
