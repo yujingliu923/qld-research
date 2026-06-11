@@ -26,8 +26,17 @@ python run_all.py            # FORCE_REFRESH=1 to bypass the parquet cache
 | `src/events.py` | Hard-coded cycle/M3/M4/QT table + verification against FEDFUNDS/WALCL |
 | `src/detect.py` | M1/M2/P detection rules |
 | `src/analysis.py` | Master timeline, interval stats (sign tests), orderings, conditional drawdowns, robustness, figures, SUMMARY.md |
-| `run_all.py` | End-to-end driver |
+| `src/regime.py` | Current-regime snapshot for the easing cycle that began with the 2024-09 first cut (extends prices/yields with overlap-checked recent mirrors); writes `output/REGIME.md` + `regime_current.png` |
+| `src/windows.py` | Rolling 3-month signal windows (1954→now): pattern codes, nearest-neighbor similarity to the current window, analog forward paths; writes `output/WINDOWS.md` + figures |
+| `run_all.py` | End-to-end driver (regime/window snapshots run separately: `python src/regime.py`, `python src/windows.py`) |
 | `output/` | `SUMMARY.md` (read this), CSV tables, timeline PNGs |
+
+Each timeline figure also shows the fed funds path on the right axis
+(daily target DFEDTAR/DFEDTARU from 1982-09, monthly average FEDFUNDS
+before that, when no target was announced), with red triangles at each
+hike, a star at the terminal/peak rate and a teal triangle at the first
+subsequent cut. Marker dates are the *effective* dates of target
+changes, which can lag the FOMC announcement by a day.
 
 ## Headline results (details + caveats in `output/SUMMARY.md`)
 

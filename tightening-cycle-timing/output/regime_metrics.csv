@@ -1,0 +1,3 @@
+,as_of,return_since_first_cut_%,annualized_%,max_drawdown_%,max_dd_trough,current_dd_from_post-cut_high_%,vol_63d_ann_%,vol_full_ann_%,above_200dma,above_50dma,trend_state
+SPX,2026-06-09,29.3,16.1,-18.9,2025-04-08,-2.9,15.0,16.6,True,True,bull (at/near highs)
+IXIC,2026-06-09,42.5,22.9,-24.3,2025-04-08,-5.2,20.8,21.9,True,True,pullback

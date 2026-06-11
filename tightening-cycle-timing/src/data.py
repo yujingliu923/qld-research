@@ -47,6 +47,10 @@ MIRRORS = {
     "SP500": f"{_RAW}/leocanada2007/us70/dc66bc6a1bfd3c1ffbe5fc105dd864fceaeeb1f2/data/SP500.csv",
     "IXIC": f"{_RAW}/leocanada2007/us70/dc66bc6a1bfd3c1ffbe5fc105dd864fceaeeb1f2/data/IXIC.csv",
     "US70_DAILY": f"{_RAW}/leocanada2007/us70/dc66bc6a1bfd3c1ffbe5fc105dd864fceaeeb1f2/data/daily.csv",
+    # FRED daily fed funds target: single target 1982-09-27 .. 2008-12-15,
+    # upper bound of the target range 2008-12-16 .. 2026-02
+    "DFEDTAR": f"{_RAW}/vengveng/FEII/d646ed078efe87a902d89260ad2a6eea974bbe81/data/raw/DFEDTAR.csv",
+    "DFEDTARU": f"{_RAW}/calderon777/monetary-economics/5d51200e2500079f8c660cd1ed2ee21f8ed1feb7/data_cache/dfedtaru.csv",
 }
 
 FRED_SERIES = ["CPIAUCSL", "CPILFESL", "FEDFUNDS", "DGS2", "DGS1", "WALCL"]
@@ -149,6 +153,24 @@ def load_dff() -> pd.Series:
     return _cached("DFF", [("FRED direct", direct), ("GitHub mirror", mirror)])
 
 
+def load_target() -> pd.Series:
+    """Fed funds target rate, daily: DFEDTAR (1982-09-27..2008-12-15)
+    spliced with the target-range upper bound DFEDTARU (2008-12-16..).
+    Discrete changes in this series date the FOMC hike/cut decisions."""
+
+    def direct():
+        old = _fetch_fred_direct("DFEDTAR")
+        new = _fetch_fred_direct("DFEDTARU")
+        return pd.concat([old, new]).sort_index()
+
+    def mirror():
+        old = _parse_two_col(_get(MIRRORS["DFEDTAR"]), "DFEDTAR")
+        new = _parse_two_col(_get(MIRRORS["DFEDTARU"]), "DFEDTARU")
+        return pd.concat([old[old.index < new.index.min()], new]).sort_index()
+
+    return _cached("FFTARGET", [("FRED direct", direct), ("GitHub mirror", mirror)])
+
+
 # ---------------------------------------------------------------------------
 # Integrity spot checks: known published values, tolerance 1 %.
 # ---------------------------------------------------------------------------
@@ -158,6 +180,8 @@ SPOT_CHECKS = {
     "CPIAUCSL": [("1980-03-01", 80.1), ("2022-06-01", 296.3)],
     "FEDFUNDS": [("1981-06-01", 19.10), ("2023-01-01", 4.33)],
     "DGS2": [("2021-12-31", 0.73)],
+    # 1994-11-15 hike to 5.50; 2023-07-27 hike to 5.50 upper bound
+    "FFTARGET": [("1994-11-16", 5.50), ("2023-07-28", 5.50)],
 }
 
 
@@ -184,6 +208,7 @@ def load_all() -> dict[str, pd.Series]:
     series["SPX"] = load_spx()
     series["IXIC"] = load_ixic()
     series["DFF"] = load_dff()
+    series["FFTARGET"] = load_target()
     problems = verify_series(series)
     if problems:
         for p in problems:
