@@ -328,6 +328,69 @@ def make_figures(df, analogs, spx_d, now):
     plt.close(fig)
 
 
+FEATURE_DOCS = [
+    ("eq_ret_3m", "S&P 500, 3-month return",
+     "% change in the month-end S&P 500 level over the trailing 3 months",
+     "Short-term equity momentum / direction"),
+    ("eq_vol_3m", "S&P 500, 3-month realized volatility (annualized)",
+     "Std. dev. of daily S&P 500 returns over the trailing ~3 months, "
+     "annualized (x sqrt(252)) and expressed in %",
+     "How turbulent the recent equity tape has been"),
+    ("eq_dd_12m", "Drawdown from the trailing 12-month high",
+     "(price / 12-month rolling max price - 1) x 100, as of month end",
+     "How far below its own recent peak the market is sitting"),
+    ("eq_mom_12m", "S&P 500, 12-month momentum",
+     "% change in the month-end S&P 500 level over the trailing 12 months",
+     "Longer-horizon trend"),
+    ("ff_chg_3m", "3-month change in the fed funds rate",
+     "FEDFUNDS(t) - FEDFUNDS(t-3), in percentage points",
+     "Direction and speed of Fed policy: hiking, cutting, or on hold"),
+    ("real_ff", "Real fed funds rate",
+     "FEDFUNDS - CPI YoY, in percentage points",
+     "How restrictive (positive) or accommodative (negative) policy is "
+     "once inflation is netted out"),
+    ("cpi_yoy", "CPI, year-over-year inflation",
+     "(CPI(t) / CPI(t-12) - 1) x 100",
+     "Headline inflation level"),
+    ("cpi_yoy_chg_3m", "3-month change in CPI YoY",
+     "cpi_yoy(t) - cpi_yoy(t-3), in percentage points",
+     "Whether inflation is accelerating, decelerating, or steady"),
+    ("y2_minus_ff", "2-year Treasury yield minus the fed funds rate",
+     "2y yield (DGS2, or DGS1 before 1976) - FEDFUNDS, in percentage points",
+     "Bond market's near-term policy expectation: negative means the "
+     "market is pricing cuts, positive means it sees room to hike further"),
+    ("y2_chg_3m", "3-month change in the 2-year yield",
+     "2y yield(t) - 2y yield(t-3), in percentage points",
+     "Direction of the rate-expectation shift"),
+]
+
+ABBREV_DOCS = [
+    ("SPX", "S&P 500 index (large-cap US equities)"),
+    ("IXIC", "Nasdaq Composite index (broad US tech-heavy equities)"),
+    ("FEDFUNDS / FF", "Effective federal funds rate, the Fed's short-term policy rate"),
+    ("CPI / CPI YoY", "Consumer Price Index; YoY = year-over-year % change"),
+    ("DGS1 / DGS2 / DGS10", "Constant-maturity Treasury yields: 1-year, 2-year, 10-year (FRED series)"),
+    ("y2", "Shorthand for the 2-year Treasury yield (spliced DGS2/DGS1 series)"),
+    ("pp / bp", "Percentage points / basis points (1 pp = 100 bp)"),
+    ("GOLD", "London gold fixing price (USD/oz)"),
+    ("WTI", "West Texas Intermediate crude oil spot price"),
+    ("DXY", "US Dollar Index (broad trade-weighted dollar)"),
+    ("d2y_bp / d10y_bp", "Change in the 2-year / 10-year Treasury yield over the next 12 months, in basis points"),
+    ("UST10y_TR_approx_%", "Approximate 10-year Treasury total return over 12 months: "
+     "starting yield (carry) minus (modified duration x yield change) — an "
+     "approximation, not a tracked index"),
+    ("fwd_6m_% / fwd_12m_%", "S&P 500 % return over the 6 / 12 months following the window end"),
+    ("M+1 ... M+12", "Calendar months 1 through 12 after the window end"),
+    ("cum_12m", "Cumulative % return over all 12 months after the window end"),
+    ("HIKE / CUT / HOLD", "Policy state from ff_chg_3m: HIKE if > +0.20pp, CUT if < -0.20pp, else HOLD"),
+    ("infl-up / infl-dn / infl-flat", "Inflation trend from cpi_yoy_chg_3m: up if > +0.1pp, down if < -0.1pp, else flat"),
+    ("eq-up / eq-dn / eq-flat", "Equity trend from eq_ret_3m: up if > +2%, down if < -2%, else flat"),
+    ("low-vol / mid-vol / high-vol", "Volatility band: eq_vol_3m vs. its 30th/70th percentile across the full sample"),
+    ("n_features", "Number of the 10 features available for a given window (10 from 1962 on, 8 before, since "
+     "y2_minus_ff and y2_chg_3m require DGS1, which starts in 1962)"),
+]
+
+
 def write_report(df, analogs, stale, now, last_close,
                  assets_df=None, grids=None, assets=None):
     cur = df.loc[now]
@@ -337,6 +400,17 @@ def write_report(df, analogs, stale, now, last_close,
     L = []
     w = L.append
     w("# Rolling 3-month signal windows: which past periods look like now?\n")
+    w("This report scans the entire post-1954 history one month at a time. "
+      "For every month it builds a 3-month \"window\" (the month itself "
+      "plus the two before it), reduces that window to a ten-number "
+      "\"signal fingerprint\" covering equities, Fed policy, inflation and "
+      "the bond market, and then measures how close every past fingerprint "
+      "is to today's. The closest historical analogs are used to ask: in "
+      "periods that *looked like this one*, what happened to stocks, "
+      "bonds, gold, oil and the dollar over the following year? See "
+      "[Methodology](#methodology-how-windows-are-built-and-compared) "
+      "below for the precise definitions, and "
+      "[Reading and limitations](#reading-and-limitations) for caveats.\n")
     w(f"_Generated {pd.Timestamp.now():%Y-%m-%d}. Windows step monthly; each "
       f"covers the 3 months ending at the date shown. Sample: "
       f"{df.index.min():%Y-%m} to {df.index.max():%Y-%m} "
@@ -347,32 +421,116 @@ def write_report(df, analogs, stale, now, last_close,
 
     w("\n## The current window\n")
     w(f"Window ending **{now:%Y-%m}** — pattern: **`{cur['pattern']}`**\n")
+    w("The table below gives the raw value of each of the ten signal "
+      "features for the current window (definitions in the Methodology "
+      "section).\n")
     feat_rows = pd.DataFrame({"feature": FEATURES,
                               "value": [round(cur[f], 2) for f in FEATURES]})
     w(feat_rows.to_markdown(index=False))
     w("\nStale inputs carried forward into the current window (mirror "
       "freshness): "
       + "; ".join(f"{k} last observed {v:%Y-%m-%d}" for k, v in stale.items())
-      + ".\n")
+      + ". Macro releases lag, so the most recent month(s) of FEDFUNDS, "
+      "CPI and the 2-year yield are carried forward at their last known "
+      "value (up to "
+      f"{MAX_FFILL} months) when computing the current window's features.\n")
+
+    w("\n## Methodology: how windows are built and compared\n")
+    w("### The ten signal features\n")
+    w("Each window is reduced to ten numbers spanning four blocks — "
+      "equities, policy, inflation and the bond market. The table below "
+      "defines each one, how it is computed, and what it is meant to "
+      "capture.\n")
+    fdoc = pd.DataFrame(FEATURE_DOCS, columns=["feature", "name", "formula", "captures"])
+    w(fdoc.to_markdown(index=False))
+
+    w("\n### Distance: how \"similarity to now\" is measured\n")
+    w("1. Every feature is **z-scored** across the full sample: for feature "
+      "*f*, `z_f(t) = (x_f(t) - mean(x_f)) / std(x_f)`, where the mean and "
+      "standard deviation are taken over all windows in the sample. This "
+      "puts all ten features (which have very different units — percent "
+      "returns, percentage points, etc.) on a common scale.")
+    w("2. For each historical window *t*, the **distance to now** is the "
+      "root-mean-square (RMS) of the z-score differences versus the "
+      "current window: `distance(t) = sqrt( mean_f[ (z_f(t) - z_f(now))^2 ] )`, "
+      "where the mean is taken only over the features available in *both* "
+      "windows.")
+    w("3. **Missing features**: the two bond-market features "
+      "(`y2_minus_ff`, `y2_chg_3m`) require the 2-year Treasury yield "
+      "(DGS2/DGS1), which only starts in 1962, so windows before then are "
+      "compared on the remaining 8 features. The `n_features` column in "
+      "`window_signals.csv` records how many of the 10 features were "
+      "available for each window. Windows with fewer than "
+      f"{MIN_FEATURES} available features are dropped from the sample "
+      "entirely.")
+    w("4. A lower distance means a more similar fingerprint; distance 0 "
+      "would be an exact match on every available feature. The "
+      "\"most similar past windows\" table below ranks history by this "
+      "distance.")
+
+    w("\n### Pattern codes\n")
+    w("In addition to the continuous distance measure, every window is "
+      "also assigned a discrete, four-part **pattern code** of the form "
+      "`{policy} | {inflation trend} | {equity trend} | {vol band}`, using "
+      "these thresholds:\n")
+    w("- **Policy** — `HIKE` if `ff_chg_3m` > +0.20pp, `CUT` if < -0.20pp, "
+      "else `HOLD`.")
+    w("- **Inflation trend** — `infl-up` if `cpi_yoy_chg_3m` > +0.1pp, "
+      "`infl-dn` if < -0.1pp, else `infl-flat`.")
+    w("- **Equity trend** — `eq-up` if `eq_ret_3m` > +2%, `eq-dn` if "
+      "< -2%, else `eq-flat`.")
+    w("- **Volatility band** — `low-vol` / `mid-vol` / `high-vol` "
+      "according to whether `eq_vol_3m` falls in the bottom 30%, middle "
+      "40%, or top 30% of its full-sample distribution (terciles at the "
+      "30th/70th percentiles).")
+    w("\nPattern codes are coarser than the distance metric but make it "
+      "easy to ask \"how often has this *kind* of regime occurred, and "
+      "what usually followed?\" — see the Pattern-code view below.\n")
 
     w("\n## Most similar past windows (top 10 distinct episodes)\n")
+    w("The table ranks the closest historical analogs by `distance` "
+      "(smaller = more similar), excluding the most recent "
+      f"{EXCLUDE_MONTHS} months and enforcing at least {EPISODE_GAP} months "
+      "between any two selected windows so the list reflects distinct "
+      "episodes rather than the same regime sampled many times in a row. "
+      "`fwd_6m_%`/`fwd_12m_%` are the S&P 500's actual forward returns "
+      "from each analog's window-end date.\n")
     view = analogs.reset_index().rename(columns={"index": "window_end"})
     view["window_end"] = pd.to_datetime(view["window_end"]).dt.strftime("%Y-%m")
     cols = ["window_end", "distance", "pattern", "eq_ret_3m", "ff_chg_3m",
             "cpi_yoy", "y2_minus_ff", "fwd_6m_%", "fwd_12m_%"]
     w(view[cols].round(2).to_markdown(index=False))
+    w(f"\nMedian forward return across these {len(view)} analogs: "
+      f"S&P 500 {view['fwd_6m_%'].median():+.1f}% over 6 months and "
+      f"{view['fwd_12m_%'].median():+.1f}% over 12 months. Individual "
+      "outcomes vary widely (see the cross-asset and monthly tables "
+      "below) — the median summarizes the *center* of a small, noisy "
+      "sample, not a forecast.\n")
 
     if assets_df is not None:
         w("\n\n## Cross-asset performance in the 12 months after each analog\n")
-        w("Yield moves in bp; `UST10y_TR_approx` is carry minus duration x "
-          "yield change (approximation, not an index). n/a = the series "
-          "ends before the 12-month mark"
+        w("For each analog window-end date, this table shows the actual "
+          "return (or yield change) over the following 12 months across "
+          "equities, commodities, the dollar and Treasuries — a broader "
+          "view than equities alone of how each historical regime "
+          "resolved.\n")
+        w("Yield moves are in basis points (bp); `UST10y_TR_approx_%` is "
+          "the approximate 12-month total return on the 10-year Treasury "
+          "(starting yield, i.e. carry, minus modified duration x the "
+          "yield change — an approximation, not a tracked index). `n/a` "
+          "means the series ends before the 12-month mark"
           + (f" (DXY mirror ends {assets['DXY'].index.max():%Y-%m})."
              if assets is not None else "."))
         w("")
         w(assets_df.fillna("n/a").to_markdown(index=False))
 
     if grids is not None:
+        w("\n\nThe two tables below break the S&P 500 and Nasdaq forward "
+          "returns down month by month (`M+1` = the first calendar month "
+          "after the window end, ... `M+12` = the twelfth), with "
+          "`cum_12m` the compounded 12-month return — useful for seeing "
+          "*when* within the year the gains or losses tended to "
+          "concentrate, rather than just the endpoint.")
         for label, grid in grids.items():
             w(f"\n\n## Monthly {label} returns after each analog (%)\n")
             w(grid.fillna("n/a").to_markdown(index=False))
@@ -386,11 +544,20 @@ def write_report(df, analogs, stale, now, last_close,
         w(f" After those windows the S&P 500 was higher 12 months later in "
           f"{(same_hist['fwd_12m_%'] > 0).mean() * 100:.0f}% of cases "
           f"(median {same_hist['fwd_12m_%'].median():+.1f}%).\n")
-    w("\nMost frequent patterns over the full sample:\n")
+    w("\nThe table below shows the most frequent pattern codes across the "
+      "full sample, with `n` the number of windows carrying that code and "
+      "`med_fwd_12m` the median 12-month forward S&P 500 return following "
+      "windows with that code:\n")
     freq = (df.groupby("pattern")
               .agg(n=("pattern", "size"), med_fwd_12m=("fwd_12m_%", "median"))
               .sort_values("n", ascending=False).head(12).reset_index())
     w(freq.round(1).to_markdown(index=False))
+
+    w("\n\n## Glossary of abbreviations\n")
+    w("Quick reference for every abbreviation used across the tables and "
+      "figures in this report:\n")
+    adoc = pd.DataFrame(ABBREV_DOCS, columns=["term", "meaning"])
+    w(adoc.to_markdown(index=False))
 
     w("\n\n## Reading and limitations\n")
     w("- Similarity is measured on contemporaneous signals only — it knows "
