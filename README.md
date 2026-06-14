@@ -7,6 +7,7 @@ standalone folder with its own README, code, data and outputs.
 |---|---|
 | [`qld-leveraged-etf/`](qld-leveraged-etf/) | QLD (2× Nasdaq-100 ETF) replication back to 1999, fee calibration, QQQ/QLD/TQQQ comparison, buy-and-hold and DCA strategy backtests |
 | [`tightening-cycle-timing/`](tightening-cycle-timing/) | Fed tightening cycles 1972-2022: timing between inflation inflection, rate-expectation shift, policy signal, first hike, QT and the equity market peak; current-regime and rolling-window similarity analyses |
+| [`global-rate-cycle-ordering/`](global-rate-cycle-ordering/) | Sequence of rate-hike cycles across central banks (EM, Fed, ECB, BoJ): tests whether EM/EU/Japan hike before the US and measures the intervals — finds the Fed leads the ECB and BoJ, EM leads in 2021 |
 
 ## Conventions
 

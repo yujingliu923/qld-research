@@ -1,0 +1,14 @@
+cycle,bank,region,first_hike,from_pct,to_pct,rate_name,source
+1999 dot-com,Fed,US,1999-06-30,4.75,5.00,fed funds target,FRED DFEDTAR (repo cache)
+1999 dot-com,ECB,EU,1999-11-04,2.50,3.00,main refinancing rate,ECB press release 1999-11-04
+1999 dot-com,BoJ,Japan,2000-08-11,0.00,0.25,uncollateralized overnight call rate,BoJ ended ZIRP 2000-08-11
+2004 housing,Brazil,EM,2004-09-15,16.00,16.25,Selic,BCB raised Selic Sep 2004 (mid-cycle EM tightening)
+2004 housing,Fed,US,2004-06-30,1.00,1.25,fed funds target,FRED DFEDTAR (repo cache)
+2004 housing,ECB,EU,2005-12-01,2.00,2.25,main refinancing min bid rate,ECB press release 2005-12-01 (settled 2005-12-06)
+2004 housing,BoJ,Japan,2006-07-14,0.00,0.25,uncollateralized overnight call rate,BoJ ended ZIRP 2006-07-14
+2021 post-COVID,Brazil,EM,2021-03-17,2.00,2.75,Selic,BCB Copom 2021-03-17
+2021 post-COVID,Russia,EM,2021-03-19,4.25,4.50,key rate,CBR 2021-03-19
+2021 post-COVID,Mexico,EM,2021-06-24,4.00,4.25,overnight target,Banxico 2021-06-24
+2021 post-COVID,Fed,US,2022-03-17,0.25,0.50,fed funds target upper bound,FRED DFEDTARU (repo cache)
+2021 post-COVID,ECB,EU,2022-07-21,0.00,0.50,main refinancing rate,ECB press release 2022-07-21
+2021 post-COVID,BoJ,Japan,2024-03-19,-0.10,0.10,policy rate (ended NIRP),BoJ 2024-03-19
